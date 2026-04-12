@@ -6,6 +6,7 @@ local whitelist = {
 	"cantfeelmylife6",
 	"pinkzley",
 	"crylsv",
+	"IconicIola",
 	
 }
 
@@ -19,7 +20,7 @@ for _, name in ipairs(whitelist) do
 end
 
 if not isWhitelisted then
-	game.Players.LocalPlayer:Kick("Você não é poderosa!")
+	game.Players.LocalPlayer:Kick("você não é poderosa")
 	return
 end
 
