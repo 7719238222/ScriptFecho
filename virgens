@@ -1,0 +1,760 @@
+local RunService = game:GetService('RunService')
+local Players = game:GetService('Players')
+local UIS = game:GetService('UserInputService')
+local LocalPlayer = Players.LocalPlayer
+local MAX_DISTANCE = 1500
+
+local TargetEntity = nil
+local OriginalCameraType = workspace.CurrentCamera.CameraType
+local connection = nil
+
+local isRDown = false
+local isFDown = false -- Novo: para rastrear se F está pressionado
+local gui, inputBox, dropdown, UIListLayout
+
+-- Tables to store highlights and hitboxes
+local playerHighlights = {}
+local playerHitboxes = {}
+local highlightConnections = {}
+local hitboxUpdateConnections = {}
+
+local vidoModule =
+	game:GetService('Players').LocalPlayer.PlayerScripts.ModuleScripts.AbilityHandler
+	:WaitForChild('Vido')
+local Vido = require(vidoModule)
+
+local originalHitDetection = Vido.hitDetection
+
+Vido.hitDetection = function(self, ...)
+	local originalRange = self._range
+	self._range = 60
+	print('[VIDO] Modified range from', originalRange, 'to', self._range)
+	local result = originalHitDetection(self, ...)
+	self._range = originalRange
+	return result
+end
+
+print('[VIDO] Range increased to 60 studs')
+
+-- Passo 1: Obter o módulo
+local player = game:GetService('Players').LocalPlayer
+local superPunchModule =
+	require(player.PlayerScripts.ModuleScripts.AbilityHandler.SuperPunch)
+
+-- Variável para rastrear o estado de SuperPunch
+local equippedSuperPunch = false
+
+-- Hook para equip: wrap a função original
+local oldEquip = superPunchModule.equip
+superPunchModule.equip = function(u22, ...)
+	equippedSuperPunch = true
+	return oldEquip(u22, ...)
+end
+
+-- Hook para unequip: wrap a função original
+local oldUnequip = superPunchModule.unequip
+superPunchModule.unequip = function(p23, ...)
+	equippedSuperPunch = false
+	return oldUnequip(p23, ...)
+end
+
+-- Passo 2: Salvar a função original
+local originalNew = superPunchModule.new
+
+-- Passo 3: Redefinir a função new
+superPunchModule.new = function(...)
+	local ability = originalNew(...)
+	if ability then
+		ability._range = 100 -- Modifica o range para 90
+	end
+	return ability
+end
+
+print('[SUPER PUNCH] Range increased to 90 studs')
+
+local mouse = LocalPlayer:GetMouse()
+local camera = workspace.CurrentCamera
+local mouseMeta = getrawmetatable(mouse)
+local originalIndex = mouseMeta and mouseMeta.__index
+local originalX = mouse.X
+local originalY = mouse.Y
+local originalHit = mouse.Hit
+local originalTarget = mouse.Target
+local mouseHookActive = false
+
+-- NEW: Teleport Down function with ragdoll check
+local function teleportDown()
+	-- Check if player is ragdoll
+	if LocalPlayer.Character then
+		if LocalPlayer.Character then
+			-- Get the target player's character if one is selected
+			local targetCharacter = nil
+			local selectedPlayer = TargetEntity or lastTarget
+
+			if selectedPlayer and selectedPlayer.Character then
+				targetCharacter = selectedPlayer.Character
+			end
+
+			-- Send remote with target character if available
+			if targetCharacter then
+				local args = { targetCharacter }
+				local success, errorMsg = pcall(function()
+					game:GetService('ReplicatedStorage')
+						:WaitForChild('Remotes')
+						:WaitForChild('CarryService')
+						:WaitForChild('RequestToCarryPlayer')
+						:InvokeServer(unpack(args))
+				end)
+
+				if not success then
+					warn('Failed to send carry request: ' .. tostring(errorMsg))
+				else
+					print('Sent carry request to: ' .. selectedPlayer.Name)
+				end
+			else
+				print('No player selected for carry request')
+			end
+
+			-- Teleport local player
+			if
+				LocalPlayer.Character
+				and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
+			then
+				local humanoidRootPart = LocalPlayer.Character.HumanoidRootPart
+				local currentCFrame = humanoidRootPart.CFrame
+				local newCFrame = CFrame.new(
+					Vector3.new(currentCFrame.X, -490, currentCFrame.Z),
+					currentCFrame.LookVector
+				)
+
+				humanoidRootPart.CFrame = newCFrame
+				print(
+					'Teleported to Y = -490!'
+						.. (
+							selectedPlayer
+							and ' (Carrying: ' .. selectedPlayer.Name .. ')'
+							or ''
+						)
+				)
+			else
+				warn('Character or HumanoidRootPart not found!')
+			end
+		else
+			print("[TELEPORT] Player isn't ragdoll - cannot execute teleport")
+		end
+	else
+		print('[TELEPORT] Ragdoll property not found - cannot execute teleport')
+	end
+end
+
+-- Function to find player character in workspace.Entities
+local function FindPlayerCharacter(player)
+	if workspace:FindFirstChild('Entities') then
+		for _, entity in ipairs(workspace.Entities:GetChildren()) do
+			if entity:IsA('Model') and entity:FindFirstChild('Humanoid') then
+				-- Check if this character belongs to the player by name
+				if entity.Name == player.Name then
+					return entity
+				end
+			end
+		end
+	end
+	-- Fallback: try the default location
+	return player.Character
+end
+
+local function GetRootPart(entity)
+	if entity:IsA('Player') then
+		entity = FindPlayerCharacter(entity)
+	end
+	return entity
+		and (
+			entity:FindFirstChild('HumanoidRootPart')
+			or entity:FindFirstChild('Torso')
+			or entity.PrimaryPart
+		)
+end
+
+-- Function to update hitbox position (without welding)
+local function UpdateHitboxPosition(player, hitbox)
+	local character = FindPlayerCharacter(player)
+	if not character then
+		return
+	end
+
+	local rootPart = GetRootPart(character)
+	if not rootPart then
+		return
+	end
+
+	-- Simply update the CFrame without welding
+	hitbox.CFrame = rootPart.CFrame
+end
+
+-- Function to create visible hitbox for a player
+local function CreatePlayerHitbox(player)
+	if playerHitboxes[player] then
+		playerHitboxes[player]:Destroy()
+		playerHitboxes[player] = nil
+	end
+
+	if hitboxUpdateConnections[player] then
+		hitboxUpdateConnections[player]:Disconnect()
+		hitboxUpdateConnections[player] = nil
+	end
+
+	local character = FindPlayerCharacter(player)
+	if not character then
+		return
+	end
+
+	local rootPart = GetRootPart(character)
+	if not rootPart then
+		return
+	end
+
+	-- Create a visible part around the player
+	local hitbox = Instance.new('Part')
+	hitbox.Name = 'ExtendedHitbox_' .. player.Name
+	hitbox.Size = Vector3.new(8, 8, 8)
+	hitbox.CFrame = rootPart.CFrame
+	hitbox.Anchored = true
+	hitbox.CanCollide = false
+	hitbox.Transparency = 0.2
+	hitbox.Material = Enum.Material.SmoothPlastic
+	hitbox.BrickColor = BrickColor.new('Really blue')
+	hitbox.CastShadow = false
+	hitbox.Parent = workspace
+
+	-- Adicionar contorno branco com 80% de transparência
+	local outline = Instance.new('BoxHandleAdornment')
+	outline.Name = 'Outline'
+	outline.Adornee = hitbox
+	outline.Size = hitbox.Size
+	outline.Color3 = Color3.new(1, 1, 1)
+	outline.Transparency = 0.8
+	outline.AlwaysOnTop = true
+	outline.ZIndex = 0
+	outline.Parent = hitbox
+
+	-- Adicionar nome do jogador mais clean e em branco
+	local billboard = Instance.new('BillboardGui')
+	billboard.Parent = hitbox
+	billboard.Adornee = hitbox
+	billboard.Size = UDim2.new(0, 150, 0, 30)
+	billboard.StudsOffset = Vector3.new(0, 6, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = 500
+
+	local nameLabel = Instance.new('TextLabel')
+	nameLabel.Parent = billboard
+	nameLabel.Size = UDim2.new(1, 0, 1, 0)
+	nameLabel.Text = player.Name:sub(1, 10)
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextScaled = false
+	nameLabel.TextSize = 14
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.Gotham
+	nameLabel.TextStrokeTransparency = 0.7
+	nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+
+	-- Armazenar a hitbox
+	playerHitboxes[player] = hitbox
+
+	-- Criar conexão para atualizar a posição da hitbox a cada frame
+	hitboxUpdateConnections[player] = RunService.RenderStepped:Connect(
+		function()
+			UpdateHitboxPosition(player, hitbox)
+		end
+	)
+end
+
+-- Function to show all player hitboxes
+local function ShowAllPlayerHighlights()
+	print('[HIGHLIGHT] Showing hitboxes for all players')
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			CreatePlayerHitbox(player)
+
+			-- Set up connections to recreate hitboxes when character changes
+			if not highlightConnections[player] then
+				highlightConnections[player] = {}
+
+				local function refreshHitbox()
+					if isRDown then
+						wait(0.5)
+						CreatePlayerHitbox(player)
+					end
+				end
+
+				local charAddedConn =
+					player.CharacterAdded:Connect(refreshHitbox)
+				local charRemovingConn = player.CharacterRemoving:Connect(
+					function()
+						if playerHitboxes[player] then
+							playerHitboxes[player]:Destroy()
+							playerHitboxes[player] = nil
+						end
+						if hitboxUpdateConnections[player] then
+							hitboxUpdateConnections[player]:Disconnect()
+							hitboxUpdateConnections[player] = nil
+						end
+					end
+				)
+
+				table.insert(highlightConnections[player], charAddedConn)
+				table.insert(highlightConnections[player], charRemovingConn)
+			end
+		end
+	end
+end
+
+-- Function to hide all player hitboxes
+local function HideAllPlayerHighlights()
+	print('[HIGHLIGHT] Hiding all hitboxes')
+	for player, hitbox in pairs(playerHitboxes) do
+		if hitbox then
+			hitbox:Destroy()
+			playerHitboxes[player] = nil
+		end
+	end
+
+	for player, connection in pairs(hitboxUpdateConnections) do
+		if connection then
+			connection:Disconnect()
+		end
+	end
+	hitboxUpdateConnections = {}
+
+	-- Clean up connections
+	for player, connections in pairs(highlightConnections) do
+		for _, conn in ipairs(connections) do
+			conn:Disconnect()
+		end
+	end
+	highlightConnections = {}
+end
+
+local function GetPlayerFromMouse()
+	if not mouse then
+		return nil
+	end
+
+	local mousePos = Vector2.new(mouse.X, mouse.Y)
+	local ray = camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+	raycastParams.FilterDescendantsInstances = { LocalPlayer.Character }
+	raycastParams.IgnoreWater = true
+
+	local result =
+		workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+
+	if result then
+		for player, hitbox in pairs(playerHitboxes) do
+			if result.Instance == hitbox then
+				return player
+			end
+		end
+
+		local character = result.Instance:FindFirstAncestorOfClass('Model')
+		if character and character:FindFirstChildOfClass('Humanoid') then
+			local player = Players:GetPlayerFromCharacter(character)
+			if player and player ~= LocalPlayer then
+				return player
+			end
+		end
+	end
+
+	local closestPlayer = nil
+	local closestDot = -1
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local character = FindPlayerCharacter(player)
+			if character then
+				local rootPart = GetRootPart(character)
+				if rootPart then
+					local toPlayer = (
+						rootPart.Position - camera.CFrame.Position
+					).Unit
+					local dot = ray.Direction:Dot(toPlayer)
+
+					if dot > 0.95 and dot > closestDot then
+						local obstacleCheck = workspace:Raycast(
+							camera.CFrame.Position,
+							toPlayer
+								* (rootPart.Position - camera.CFrame.Position).Magnitude,
+							raycastParams
+						)
+
+						if
+							not obstacleCheck
+							or obstacleCheck.Instance:IsDescendantOf(character)
+						then
+							closestPlayer = player
+							closestDot = dot
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+-- DEFINE UpdateCamera BEFORE any functions that use it
+local function UpdateCamera()
+	if not TargetEntity then
+		if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+			workspace.CurrentCamera.CameraType = OriginalCameraType
+		end
+		return
+	end
+
+	local TargetRoot = GetRootPart(TargetEntity)
+	local MyRoot = GetRootPart(LocalPlayer)
+
+	if not TargetRoot or not MyRoot then
+		print(
+			'[CAMERA] Missing root parts - Target:',
+			TargetRoot ~= nil,
+			'My:',
+			MyRoot ~= nil
+		)
+		if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+			workspace.CurrentCamera.CameraType = OriginalCameraType
+		end
+		return
+	end
+
+	local distance = (TargetRoot.Position - MyRoot.Position).Magnitude
+	if distance <= MAX_DISTANCE then
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+
+		local lookDirection = (TargetRoot.Position - MyRoot.Position).Unit
+		local cameraOffset = lookDirection * -10 + Vector3.new(0, 3, 0)
+		local cameraPos = MyRoot.Position + cameraOffset
+
+		workspace.CurrentCamera.CFrame =
+			CFrame.new(cameraPos, TargetRoot.Position)
+
+		print(
+			'[CAMERA] Locked on:',
+			TargetEntity.Name,
+			'Distance:',
+			math.floor(distance)
+		)
+	else
+		if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+			workspace.CurrentCamera.CameraType = OriginalCameraType
+		end
+		print('[CAMERA] Target too far away:', distance)
+	end
+end
+
+-- DEFINE StopMouseHook BEFORE StartMouseHook
+local function StopMouseHook()
+	if mouseHookActive and mouseMeta and originalIndex then
+		setreadonly(mouseMeta, false)
+		mouseMeta.__index = originalIndex
+		setreadonly(mouseMeta, true)
+		mouseHookActive = false
+		print('[MOUSE] Hook stopped')
+	end
+end
+
+-- NOW define StartMouseHook after StopMouseHook
+local function StartMouseHook(targetPlayer)
+	if not mouseMeta or not originalIndex then
+		warn('[MOUSE] Cannot hook mouse - metatable access not available')
+		return
+	end
+	if mouseHookActive then
+		StopMouseHook()
+	end
+	setreadonly(mouseMeta, false)
+	mouseMeta.__index = newcclosure(function(self, key)
+		if isRDown then
+			return originalIndex(self, key)
+		end
+
+		if key == 'X' then
+			local character = FindPlayerCharacter(targetPlayer)
+			if character and character:FindFirstChild('HumanoidRootPart') then
+				local screenPoint = camera:WorldToScreenPoint(
+					character.HumanoidRootPart.Position
+				)
+				return screenPoint.X
+			end
+			return originalX
+		elseif key == 'Y' then
+			local character = FindPlayerCharacter(targetPlayer)
+			if character and character:FindFirstChild('HumanoidRootPart') then
+				local screenPoint = camera:WorldToScreenPoint(
+					character.HumanoidRootPart.Position
+				)
+				return screenPoint.Y
+			end
+			return originalY
+		elseif key == 'Hit' then
+			local character = FindPlayerCharacter(targetPlayer)
+			if character and character:FindFirstChild('HumanoidRootPart') then
+				return CFrame.new(character.HumanoidRootPart.Position)
+			end
+			return originalIndex(self, key)
+		elseif key == 'Target' then
+			local character = FindPlayerCharacter(targetPlayer)
+			if character and character:FindFirstChild('HumanoidRootPart') then
+				return character.HumanoidRootPart
+			end
+			return originalIndex(self, key)
+		end
+		return originalIndex(self, key)
+	end)
+	setreadonly(mouseMeta, true)
+	mouseHookActive = true
+	print('[MOUSE] Hook started for:', targetPlayer.Name)
+end
+
+local function UpdateMouseHook()
+	if mouseHookActive and TargetEntity then
+		StopMouseHook()
+		StartMouseHook(TargetEntity)
+	end
+end
+
+local function SetTarget(newTarget)
+	if newTarget then
+		print('[SYSTEM] Setting new target:', newTarget.Name)
+		TargetEntity = newTarget
+		StartMouseHook(newTarget)
+
+		UpdateCamera()
+
+		if connection then
+			connection:Disconnect()
+		end
+		connection = RunService.RenderStepped:Connect(UpdateCamera)
+
+		print('[SYSTEM] Target set and camera locked:', newTarget.Name)
+	else
+		print('[SYSTEM] Removing target')
+		TargetEntity = nil
+		StopMouseHook()
+
+		if connection then
+			connection:Disconnect()
+			connection = nil
+		end
+
+		if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+			workspace.CurrentCamera.CameraType = OriginalCameraType
+		end
+
+		print('[SYSTEM] Target removed and camera unlocked')
+	end
+end
+
+local lastTarget = nil
+local toggled = false
+
+local function CreateGUI()
+	if gui then
+		gui:Destroy()
+	end
+	gui = Instance.new('ScreenGui')
+	gui.Name = 'TargetSelectorGUI'
+	gui.ResetOnSpawn = false
+	gui.Parent = LocalPlayer:WaitForChild('PlayerGui')
+	inputBox = Instance.new('TextBox')
+	inputBox.Parent = gui
+	inputBox.Position = UDim2.new(0, 10, 0, 10)
+	inputBox.Size = UDim2.new(0, 200, 0, 30)
+	inputBox.PlaceholderText = 'Digite o nome do jogador...'
+	inputBox.Text = ''
+	inputBox.TextSize = 11
+	inputBox.TextXAlignment = Enum.TextXAlignment.Center
+	local corner = Instance.new('UICorner')
+	corner.CornerRadius = UDim.new(0, 5)
+	corner.Parent = inputBox
+	inputBox.TextScaled = false
+	inputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	dropdown = Instance.new('ScrollingFrame')
+	dropdown.Parent = gui
+	dropdown.Position = UDim2.new(0, 10, 0, 45)
+	dropdown.Size = UDim2.new(0, 200, 0, 0)
+	dropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	dropdown.BorderSizePixel = 1
+	dropdown.Visible = false
+	dropdown.ScrollBarThickness = 6
+	dropdown.ScrollingDirection = Enum.ScrollingDirection.Y
+	dropdown.ClipsDescendants = true
+	UIListLayout = Instance.new('UIListLayout', dropdown)
+	UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	UIListLayout.Padding = UDim.new(0, 2)
+	UIListLayout:GetPropertyChangedSignal('AbsoluteContentSize')
+		:Connect(function()
+			local h = UIListLayout.AbsoluteContentSize.Y
+			dropdown.CanvasSize = UDim2.new(0, 0, 0, h)
+			dropdown.Size = UDim2.new(0, 200, 0, math.min(h, 150))
+		end)
+	local function UpdateDropdown(filterText)
+		for _, child in ipairs(dropdown:GetChildren()) do
+			if child:IsA('TextButton') then
+				child:Destroy()
+			end
+		end
+		local count = 0
+		for _, player in ipairs(Players:GetPlayers()) do
+			if
+				player ~= LocalPlayer
+				and player.Name:lower():find(filterText:lower())
+			then
+				local btn = Instance.new('TextButton')
+				btn.Parent = dropdown
+				btn.Size = UDim2.new(1, 0, 0, 25)
+				btn.Text = player.Name
+				btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+				btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+				btn.MouseButton1Click:Connect(function()
+					lastTarget = player
+					SetTarget(player)
+					dropdown.Visible = false
+					inputBox.Text = player.Name
+					toggled = true
+				end)
+				count += 1
+			end
+		end
+		dropdown.Visible = count > 0
+	end
+	inputBox:GetPropertyChangedSignal('Text'):Connect(function()
+		UpdateDropdown(inputBox.Text)
+	end)
+	inputBox.Focused:Connect(function()
+		UpdateDropdown(inputBox.Text)
+	end)
+	inputBox.FocusLost:Connect(function()
+		task.wait(0.2)
+		dropdown.Visible = false
+	end)
+end
+
+CreateGUI()
+
+mouse.Button1Down:Connect(function()
+	if not isRDown then
+		return
+	end
+	local target = GetPlayerFromMouse()
+	if target then
+		print('[SYSTEM] Switching target to:', target.Name)
+		lastTarget = target
+		SetTarget(target)
+		toggled = true
+	end
+end)
+
+UIS.InputBegan:Connect(function(input, processed)
+	if input.KeyCode == Enum.KeyCode.R then
+		isRDown = true
+		UpdateMouseHook()
+		ShowAllPlayerHighlights()
+		print('[HIGHLIGHT] All players highlighted with VISIBLE hitboxes')
+	elseif input.KeyCode == Enum.KeyCode.F then
+		isFDown = true
+	elseif input.KeyCode == Enum.KeyCode.E and not processed then
+		if toggled then
+			SetTarget(nil)
+			toggled = false
+			print('[SYSTEM] Lock removido manualmente.')
+		elseif not toggled then
+			if lastTarget then
+				SetTarget(lastTarget)
+				toggled = true
+				print('[SYSTEM] Lock reativado manualmente.')
+			end
+		end
+	elseif input.KeyCode == Enum.KeyCode.Q and not processed then
+		-- NEW: Call teleportDown function when Q is pressed
+		teleportDown()
+	end
+end)
+
+UIS.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.R then
+		isRDown = false
+		UpdateMouseHook()
+		HideAllPlayerHighlights()
+		print('[HIGHLIGHT] Player hitboxes removed')
+	elseif input.KeyCode == Enum.KeyCode.F then
+		isFDown = false
+	end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+	if lastTarget and toggled then
+		wait(1)
+		SetTarget(lastTarget)
+	else
+		SetTarget(nil)
+	end
+end)
+
+game:GetService('UserInputService').WindowFocused:Connect(function()
+	if TargetEntity and mouseHookActive then
+		StopMouseHook()
+		StartMouseHook(TargetEntity)
+	end
+end)
+
+-- Start the camera update loop immediately
+connection = RunService.RenderStepped:Connect(UpdateCamera)
+
+-- Novo: Configuração para spam do remote
+local abilityRemote = game:GetService('ReplicatedStorage')
+	:WaitForChild('Remotes')
+	:WaitForChild('AbilityService')
+	:WaitForChild('ToServer')
+	:WaitForChild('AbilityActivated___')
+local targetClicksPerSecond = 130
+local clickInterval = 1 / targetClicksPerSecond
+local accumulatedTime = 0
+
+local spamConnection = RunService.Heartbeat:Connect(function(deltaTime)
+	if isFDown and TargetEntity then
+		local myRoot = GetRootPart(LocalPlayer)
+		local targetRoot = GetRootPart(TargetEntity)
+		if myRoot and targetRoot then
+			local distance = (myRoot.Position - targetRoot.Position).Magnitude
+			if distance <= 70 then
+				accumulatedTime = accumulatedTime + deltaTime
+				while accumulatedTime >= clickInterval do
+					local targetCharacter = FindPlayerCharacter(TargetEntity)
+					if targetCharacter then
+						local args2 = { targetCharacter }
+						abilityRemote:FireServer(unpack(args2))
+					end
+					accumulatedTime = accumulatedTime - clickInterval
+				end
+			end
+		end
+	end
+end)
+
+print('Inicializado.')
+print('Pressione R enquanto mira num alvo para cravar a câmera nele.')
+print('Pressione E para desligar o lock.')
+print('Pressione Q para executar teleport down (requer ragdoll).')
+print('Vido range aumentado para 60 studs.')
+print('Super Punch range aumentado para 70 studs.')
+print(
+	'Pressione e segure R para mostrar hitboxes VISÍVEIS de todos os jogadores.'
+)
+print('Clique em qualquer hitbox enquanto segura R para trocar de alvo!')
+print(
+	'Segure F para spam SuperPunch no target (se equipado e distância <=70).'
+)
