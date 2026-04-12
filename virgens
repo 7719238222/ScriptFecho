@@ -1,29 +1,32 @@
+-- ===== WHITELIST CONFIGURATION =====
+local whitelist = {
+	"aIisonargent6",
+	"Vitufeia",
+	"Tessa",
+}
+
+local playerName = game.Players.LocalPlayer.Name
+local isWhitelisted = false
+for _, name in ipairs(whitelist) do
+	if name == playerName then
+		isWhitelisted = true
+		break
+	end
+end
+
+if not isWhitelisted then
+	game.Players.LocalPlayer:Kick("voce não é poderosa")
+	return
+end
+
+print("✅ Whitelist verificada! Script carregando...")
+-- ===== END WHITELIST =====
+
 local RunService = game:GetService('RunService')
 local Players = game:GetService('Players')
 local UIS = game:GetService('UserInputService')
 local LocalPlayer = Players.LocalPlayer
 local MAX_DISTANCE = 1500
-
-local Whitelist = {
-	[2552805119] = "Cyganitooo",
-	-- Add more players if you want.
-}
-
-local function isPlayerWhitelisted(player)
-	return Whitelist[player.UserId] ~= nil
-end
-
-local function onPlayerAdded(player)
-	if isPlayerWhitelisted(player) then
-		print(player.Name .. " is on the whitelist. Access granted.")
-	else
-		print(player.Name .. " is not on the whitelist. Access denied.")
-		player:Kick("Você não é poderosa como uma white ativada")
-	end
-end
-
-game.Players.PlayerAdded:Connect(onPlayerAdded)
-
 
 local TargetEntity = nil
 local OriginalCameraType = workspace.CurrentCamera.CameraType
