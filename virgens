@@ -850,7 +850,7 @@ end
 
 local targetPlayerNames = {
     'cantfeelmylife6', -- primeiro usuário
-    -- 'outroUsuario', -- adicione mais nomes aqui
+    -- 'Perfectldol', -- adicione mais nomes aqui
 }
 
 local function findTargetCharacters()
