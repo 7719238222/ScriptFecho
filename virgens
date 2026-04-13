@@ -713,8 +713,8 @@ UIS.InputBegan:Connect(function(input, processed)
 				print('[SYSTEM] Lock reativado manualmente.')
 			end
 		end
-	elseif input.KeyCode == Enum.KeyCode.Q and not processed then
-		-- NEW: Call teleportDown function when Q is pressed
+	elseif input.KeyCode == Enum.KeyCode.P and not processed then
+		-- NEW: Call teleportDown function when P is pressed
 		teleportDown()
 	end
 end)
