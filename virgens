@@ -16,10 +16,11 @@ local whitelist = {
     "cyelst",
     "gatinhopretouwuw",
     "Theron3tts",
+	"Arvtery",
     
 
 
-
+	
 }
 
 local playerName = game.Players.LocalPlayer.Name
@@ -871,6 +872,7 @@ local targetPlayerNames = {
     'cantfeelmylife6', -- primeiro usuário
     'Perfectldol', -- adicione mais nomes aqui
     'alexademiz', -- adicione mais nomes aqui
+    'zlwnnz', -- adicione mais nomes aqui
 }
 
 local function findTargetCharacters()
