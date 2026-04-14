@@ -16,10 +16,10 @@ local whitelist = {
     "cyelst",
     "gatinhopretouwuw",
     "Theron3tts",
-    "zlwnnz",
+    
 
 
-	
+
 }
 
 local playerName = game.Players.LocalPlayer.Name
@@ -52,6 +52,7 @@ local connection = nil
 local isRDown = false
 local isFDown = false -- Novo: para rastrear se F está pressionado
 local gui, inputBox, dropdown, UIListLayout
+local targetSearchVisible = true
 
 -- Tables to store highlights and hitboxes
 local playerHighlights = {}
@@ -601,6 +602,16 @@ end
 local lastTarget = nil
 local toggled = false
 
+local function SetTargetSearchUIVisible(enabled)
+	targetSearchVisible = enabled
+	if inputBox then
+		inputBox.Visible = enabled
+	end
+	if dropdown then
+		dropdown.Visible = enabled and dropdown.Visible
+	end
+end
+
 local function CreateGUI()
 	if gui then
 		gui:Destroy()
@@ -623,6 +634,7 @@ local function CreateGUI()
 	inputBox.TextScaled = false
 	inputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 	inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	inputBox.Visible = targetSearchVisible
 	dropdown = Instance.new('ScrollingFrame')
 	dropdown.Parent = gui
 	dropdown.Position = UDim2.new(0, 10, 0, 45)
@@ -828,7 +840,9 @@ local Window = Rayfield:CreateWindow({
    }
 })
 
-local MainTab = Window:CreateTab("MainTab", 4483362458) -- Title, Image
+local MainTab = Window:CreateTab("Combat", 4483362458) -- Title, Image
+
+local MainTab2 = Window:CreateTab("Player's", 4483362458) -- Title, Image
 
 local invisiqueConferoEnabled = false
 local function setInvisiqueConferoEnabled(value)
@@ -904,7 +918,7 @@ local function performInvisiqueConfero()
     end
 end
 
-MainTab:CreateToggle({
+MainTab2:CreateToggle({
    Name = "Habilitar FastSelect Slot",
    CurrentValue = false,
    Flag = "FastSelectSlotEnable",
@@ -913,6 +927,16 @@ MainTab:CreateToggle({
           getgenv().FastSelectSlotEnabled = Value
       end
       print('FastSelect Slot habilitado:', tostring(Value))
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Mostrar busca de jogador",
+   CurrentValue = true,
+   Flag = "ShowPlayerSearch",
+   Callback = function(Value)
+      SetTargetSearchUIVisible(Value)
+      print('Busca de jogador visibilidade:', tostring(Value))
    end,
 })
 
