@@ -1,0 +1,149 @@
+-- [[ KERNEL V186 - PHANTOM STRIKE ]] --
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local StarterGui = game:GetService("StarterGui")
+
+local function GetRem()
+    return ReplicatedStorage:FindFirstChild("BeginAbility", true), 
+           ReplicatedStorage:FindFirstChild("AbilityActivated____", true)
+end
+
+local Begin, Activate = GetRem()
+
+local SETTINGS = {
+    Enabled = false,
+    DetectionRange = 115, 
+    CombatRange = 75,     
+    Backtrack = 0.85,    
+    AttackDelay = 0.03,  -- Delay otimizado para não bugar a rede
+    Burst = 30,          
+    
+    ToggleKey = Enum.KeyCode.R,
+    FriendsOnly = true,
+    Whitelist = {}
+}
+
+local currentTarget = nil
+local lastAttack = 0
+
+-- [[ 1. O SEGREDO: SILENT AIM SEM TELEPORTE FÍSICO ]]
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if SETTINGS.Enabled and not checkcaller() and self == Activate and method == "FireServer" then
+        if currentTarget and currentTarget:FindFirstChild("HumanoidRootPart") then
+            local tHRP = currentTarget.HumanoidRootPart
+            
+            -- Mente a posição no pacote: o servidor acha que você está colada nela
+            for i, v in ipairs(args) do
+                if typeof(v) == "CFrame" then 
+                    args[i] = tHRP.CFrame * CFrame.new(0, 0, 0.5)
+                elseif typeof(v) == "Vector3" then 
+                    args[i] = tHRP.Position
+                elseif typeof(v) == "Instance" and v:IsA("Model") then 
+                    args[i] = currentTarget 
+                end
+            end
+        end
+        -- Backtrack para ignorar o Desync dela
+        if type(args[1]) == "number" and args[1] > 10^9 then 
+            args[1] = args[1] - SETTINGS.Backtrack 
+        end
+        return oldNamecall(self, unpack(args))
+    end
+    return oldNamecall(self, ...)
+end)
+
+-- [[ 2. LIMPEZA DE ESTADO (MOVIMENTO LIVRE) ]]
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if SETTINGS.Enabled and char then
+        -- Anti-Stun mantido
+        char:SetAttribute("Stunned", false)
+        char:SetAttribute("Busy", false)
+        
+        -- Garante que a física esteja sempre ativa (evita flutuar)
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+end)
+
+-- [[ 3. LOOP DE ATAQUE (PHANTOM BURST) ]]
+task.spawn(function()
+    while true do
+        task.wait(SETTINGS.AttackDelay)
+        
+        if SETTINGS.Enabled and currentTarget then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local tHRP = currentTarget:FindFirstChild("HumanoidRootPart")
+            
+            if hrp and tHRP then
+                local dist = (hrp.Position - tHRP.Position).Magnitude
+                
+                if dist <= SETTINGS.CombatRange then
+                    -- NOTA: Removi o teleporte físico (hrp.CFrame = ...)
+                    -- Agora o dano é enviado pelo Hookmetamethod de forma invisível
+                    
+                    if Begin then Begin:FireServer() end
+                    
+                    for i = 1, SETTINGS.Burst do
+                        if Activate then 
+                            Activate:FireServer(currentTarget)
+                            Activate:FireServer(currentTarget) 
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- [[ 4. BUSCA DE ALVO ]]
+RunService.PostSimulation:Connect(function()
+    if not SETTINGS.Enabled then currentTarget = nil return end
+    local target, bestDist = nil, SETTINGS.DetectionRange
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if hrp then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local trp = p.Character:FindFirstChild("HumanoidRootPart")
+                local hum = p.Character:FindFirstChild("Humanoid")
+                
+                local isFriend = false
+                if SETTINGS.FriendsOnly then
+                    pcall(function() isFriend = LocalPlayer:IsFriendsWith(p.UserId) end)
+                end
+                
+                if trp and hum and hum.Health > 0 and not isFriend and not table.find(SETTINGS.Whitelist, p.UserId) then
+                    local d = (trp.Position - hrp.Position).Magnitude
+                    if d < bestDist then target = p.Character bestDist = d end
+                end
+            end
+        end
+    end
+    currentTarget = target
+end)
+
+-- [[ TOGGLE ]]
+UserInputService.InputBegan:Connect(function(i, g)
+    if g then return end
+    if i.KeyCode == SETTINGS.ToggleKey then
+        SETTINGS.Enabled = not SETTINGS.Enabled
+        StarterGui:SetCore("SendNotification", {
+            Title = "KERNEL V186",
+            Text = SETTINGS.Enabled and "PHANTOM STRIKE: ON" or "OFF",
+            Duration = 2
+        })
+    end
+end)
