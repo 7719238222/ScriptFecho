@@ -18,7 +18,7 @@ local Begin, Activate = ReplicatedStorage:FindFirstChild("BeginAbility", true), 
 
 local SETTINGS = {
     Enabled = false,
-    DetectionRange = 120, 
+    DetectionRange = 140, 
     CombatRange = 80,     
     Backtrack = 0.9,      
     
@@ -121,7 +121,7 @@ UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
     if i.KeyCode == SETTINGS.ToggleKey then
         SETTINGS.Enabled = not SETTINGS.Enabled
-        Notify("kernel XERECA black 193", SETTINGS.Enabled and "ESTÁVEL: LIGADO" or "ESTÁVEL: DESLIGADO")
+        Notify("kernel XERECA 193", SETTINGS.Enabled and "ESTÁVEL: LIGADO" or "ESTÁVEL: DESLIGADO")
         if not SETTINGS.Enabled then currentTarget = nil end
     end
 end)
