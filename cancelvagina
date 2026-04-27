@@ -24,7 +24,7 @@ local SETTINGS = {
     
     -- CONTROLE DE FLUXO (O segredo para o ping não subir)
     MaxPackets = 240,      -- Reduzido para não entupir a rede
-    AttackDelay = 0.25,  -- Delay de segurança (Equilíbrio perfeito)
+    AttackDelay = 0.40,  -- Delay de segurança (Equilíbrio perfeito)
     
     ToggleKey = Enum.KeyCode.R,
     FriendsOnly = true
