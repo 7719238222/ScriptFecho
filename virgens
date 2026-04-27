@@ -33,12 +33,12 @@ for _, name in ipairs(whitelist) do
 end
 
 if not isWhitelisted then
-	game.Players.LocalPlayer:Kick("Você foi banido por esta experiência ou por seus moderadores permanentemente.  
+	game.Players.LocalPlayer:Kick( "Você foi banido por esta experiência ou por seus moderadores permanentemente.  
 Mensagem da moderação:  
 
 Exploiting
 If you are falsely banned. You may appeal the ban on our group Discord.  
-(Código de erro: 600)")
+(Código de erro: 600)" )
 	return
 end
 
