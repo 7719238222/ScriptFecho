@@ -23,7 +23,7 @@ local SETTINGS = {
     Backtrack = 0.9,      
     
     -- CONTROLE DE FLUXO (O segredo para o ping não subir)
-    MaxPackets = 75,      -- Reduzido para não entupir a rede
+    MaxPackets = 50,      -- Reduzido para não entupir a rede
     AttackDelay = 0.01,  -- Delay de segurança (Equilíbrio perfeito)
     
     ToggleKey = Enum.KeyCode.R,
