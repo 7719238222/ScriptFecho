@@ -23,8 +23,8 @@ local SETTINGS = {
     Backtrack = 0.9,      
     
     -- CONTROLE DE FLUXO (O segredo para o ping não subir)
-    MaxPackets = 150,      -- Reduzido para não entupir a rede
-    AttackDelay = 0.20,  -- Delay de segurança (Equilíbrio perfeito)
+    MaxPackets = 200,      -- Reduzido para não entupir a rede
+    AttackDelay = 0.025,  -- Delay de segurança (Equilíbrio perfeito)
     
     ToggleKey = Enum.KeyCode.R,
     FriendsOnly = true
@@ -121,7 +121,7 @@ UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
     if i.KeyCode == SETTINGS.ToggleKey then
         SETTINGS.Enabled = not SETTINGS.Enabled
-        Notify("kernel CU 193", SETTINGS.Enabled and "ESTÁVEL: LIGADO" or "ESTÁVEL: DESLIGADO")
+        Notify("kernel CUzin 193", SETTINGS.Enabled and "ESTÁVEL: LIGADO" or "ESTÁVEL: DESLIGADO")
         if not SETTINGS.Enabled then currentTarget = nil end
     end
 end)
