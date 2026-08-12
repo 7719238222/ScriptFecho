@@ -1,0 +1,247 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+local espEnabled = false
+local espCache = {}
+local menuOpen = true
+
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CustomESPMenu"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 260, 0, 150)
+main.Position = UDim2.new(0.02, 0, 0.12, 0)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+main.BorderSizePixel = 0
+main.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = main
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(80, 80, 80)
+stroke.Thickness = 1
+stroke.Parent = main
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, -40, 0, 24)
+title.Position = UDim2.new(0, 10, 0, 8)
+title.BackgroundTransparency = 1
+title.Text = "ESP HEROES QUEENS"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = main
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "Close"
+closeButton.Size = UDim2.new(0, 24, 0, 24)
+closeButton.Position = UDim2.new(1, -30, 0, 10)
+closeButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 14
+closeButton.BorderSizePixel = 0
+closeButton.Parent = main
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = closeButton
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleESP"
+toggleButton.Size = UDim2.new(1, -20, 0, 38)
+toggleButton.Position = UDim2.new(0, 10, 0, 55)
+toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggleButton.Text = "ESP: OFF"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.GothamSemibold
+toggleButton.TextSize = 16
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = main
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 8)
+toggleCorner.Parent = toggleButton
+
+local function atualizarTextoToggle()
+    toggleButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
+    toggleButton.BackgroundColor3 = espEnabled and Color3.fromRGB(30, 90, 30) or Color3.fromRGB(40, 40, 40)
+end
+
+local function limparESP(p)
+    if espCache[p] then
+        local dados = espCache[p]
+        if dados.Texto then
+            dados.Texto.Visible = false
+            if dados.Texto.Remove then dados.Texto:Remove() end
+        end
+        if dados.Render then
+            dados.Render:Disconnect()
+        end
+
+        if p.Character then
+            local hl = p.Character:FindFirstChild("ESPHighlight")
+            if hl then hl:Destroy() end
+        end
+
+        espCache[p] = nil
+    end
+end
+
+local function checarInvisibilidade(cr)
+    for _, obj in ipairs(cr:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then
+            if obj.Transparency < 0.9 then return false end
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            if obj.Transparency < 0.9 then return false end
+        end
+    end
+
+    return true
+end
+
+local function esp(p, cr)
+    if not espEnabled then return end
+    if espCache[p] then return end
+
+    local h = cr:WaitForChild("Humanoid", 5)
+    local head = cr:WaitForChild("Head", 5)
+    if not h or not head then return end
+
+    local text = Drawing.new("Text")
+    text.Visible = false
+    text.Center = true
+    text.Outline = true
+    text.OutlineColor = Color3.fromRGB(0, 0, 0)
+    text.Font = 3
+    text.Size = 16
+    text.Color = Color3.fromRGB(170, 170, 170)
+
+    espCache[p] = {
+        Texto = text,
+        Render = nil
+    }
+
+    espCache[p].Render = RunService.RenderStepped:Connect(function()
+        if not espEnabled then
+            limparESP(p)
+            return
+        end
+
+        if not p or not p.Parent or not cr or not cr.Parent or not head or not head.Parent or h.Health <= 0 then
+            limparESP(p)
+            return
+        end
+
+        local head_pos, head_onscreen = Camera:WorldToViewportPoint(head.Position)
+
+        if head_onscreen then
+            text.Position = Vector2.new(head_pos.X, head_pos.Y - 27)
+
+            local isInvis = checarInvisibilidade(cr)
+            local hl = cr:FindFirstChild("ESPHighlight")
+
+            if isInvis then
+                text.Text = "[ INVISÍVEL | " .. p.Name .. " ]"
+                text.Color = Color3.fromRGB(255, 60, 60)
+
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "ESPHighlight"
+                    hl.FillColor = Color3.fromRGB(255, 0, 0)
+                    hl.FillTransparency = 0.5
+                    hl.OutlineColor = Color3.fromRGB(255, 0, 0)
+                    hl.Parent = cr
+                end
+            else
+                text.Text = "[ " .. p.Name .. " ]"
+                text.Color = Color3.fromRGB(170, 170, 170)
+
+                if hl then hl:Destroy() end
+            end
+
+            text.Visible = true
+        else
+            text.Visible = false
+        end
+    end)
+end
+
+local function p_added(p)
+    if p == LocalPlayer then return end
+
+    if p.Character then
+        task.spawn(function()
+            if espEnabled then
+                esp(p, p.Character)
+            end
+        end)
+    end
+
+    p.CharacterAdded:Connect(function(cr)
+        task.spawn(function()
+            if espEnabled then
+                esp(p, cr)
+            end
+        end)
+    end)
+end
+
+local function atualizarTodos()
+    if espEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                esp(p, p.Character)
+            end
+        end
+    else
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                limparESP(p)
+            end
+        end
+    end
+end
+
+toggleButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    atualizarTextoToggle()
+    atualizarTodos()
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+    menuOpen = false
+    main.Visible = false
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K then
+        menuOpen = not menuOpen
+        main.Visible = menuOpen
+    end
+end)
+
+for _, p in ipairs(Players:GetPlayers()) do
+    p_added(p)
+end
+
+Players.PlayerAdded:Connect(p_added)
+Players.PlayerRemoving:Connect(limparESP)
+
+atualizarTextoToggle()
